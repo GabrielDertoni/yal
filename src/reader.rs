@@ -1,5 +1,6 @@
 use std::str::pattern::Pattern;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 use crate::ast::*;
 use crate::error::*;
@@ -72,12 +73,12 @@ impl<'a> Reader<'a> {
                 let s = s.replace("\\r", "\0");
                 let s = s.replace("\\0", "\0");
                 self.advance();
-                Ok(Atom::String(s))
+                Ok(Atom::String(Rc::new(s)))
             }
 
             '\'' => {
                 self.advance();
-                Ok(Atom::Quote(Box::new(self.parse_sexpr()?)))
+                Ok(Atom::Quote(Rc::new(self.parse_sexpr()?)))
             },
 
             chr if chr.is_digit(10) => {
@@ -110,7 +111,7 @@ impl<'a> Reader<'a> {
                     self.advance();
                 }
 
-                Ok(Atom::Ident(start.span_to(self.pos()).as_str().to_string()))
+                Ok(Atom::Ident(Rc::new(start.span_to(self.pos()).as_str().to_string())))
             }
 
             chr => Err(self.error(format!("unexpected char '{chr}'"))),
@@ -132,7 +133,12 @@ impl<'a> Reader<'a> {
                         return Err(self.error("expected a closing paren"));
                     }
                     self.advance();
-                    return Ok(SExpr::List(sexprs))
+
+                    let mut list = SExpr::Atom(Atom::Nil);
+                    for sexpr in sexprs.into_iter().rev() {
+                        list = SExpr::Cons(Atom::quote(sexpr), Atom::quote(list));
+                    }
+                    return Ok(list)
                 },
 
                 Some(';') => {

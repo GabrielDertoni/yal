@@ -1,121 +1,130 @@
-use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::ast::*;
 
 #[derive(Debug)]
 pub struct Environment {
-    variables: HashMap<String, Vec<RefVal>>,
-    stack: Vec<RefVal>,
+    scopes: Vec<HashMap<String, Atom>>,
+    stack: Vec<Atom>,
 }
 
 impl Environment {
     pub fn new() -> Self {
-        Environment {
-            variables: HashMap::new(),
+        let mut env = Environment {
+            scopes: vec![HashMap::new()],
             stack: Vec::new(),
-        }
+        };
+
+        let the_true = Atom::Quote(Rc::new(SExpr::Atom(Atom::Ident(Rc::new(String::from(
+            "t",
+        ))))));
+
+        env.bind_var("t", the_true);
+        env
     }
 
-    pub fn pop_stack(&mut self) -> RefVal {
+    pub fn pop_stack(&mut self) -> Atom {
         self.stack.pop().unwrap()
     }
 
-    pub fn push_stack(&mut self, val: RefVal) {
+    pub fn push_stack(&mut self, val: Atom) {
         self.stack.push(val);
+    }
+
+    pub fn scope(&self) -> &HashMap<String, Atom> {
+        &self.scopes[self.scopes.len() - 1]
+    }
+
+    pub fn scope_mut(&mut self) -> &mut HashMap<String, Atom> {
+        let idx = self.scopes.len() - 1;
+        &mut self.scopes[idx]
+    }
+
+    pub fn push_frame(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    pub fn pop_frame(&mut self) {
+        self.scopes.pop();
     }
 
     pub fn register_external_fun(
         &mut self,
         name: &'static str,
         arity: usize,
-        ptr: fn(&mut Environment) -> Result<RefVal, String>,
+        ptr: fn(&mut Environment) -> Result<Atom, String>,
     ) {
-        self.variables.insert(
+        self.scope_mut().insert(
             name.to_string(),
-            vec![RefVal::owned(Value::Function(Function::Lib {
-                name,
-                arity,
-                ptr,
-            }))],
+            Atom::Function(Rc::new(Function::Lib { name, arity, ptr })),
         );
     }
 
-    pub fn bind_var(&mut self, name: impl ToString, val: RefVal) {
-        let name = name.to_string();
-        if let Some(entry) = self.variables.get_mut(&name) {
-            entry.push(val);
-        } else {
-            self.variables.insert(name, vec![val]);
-        }
+    pub fn bind_var(&mut self, name: impl ToString, val: Atom) {
+        self.scope_mut().insert(name.to_string(), val);
     }
 
-    pub fn unbind_var(&mut self, name: &str) -> Result<(), String> {
-        if let Some(entry) = self.variables.get_mut(name) {
-            let popped = entry.pop();
-
-            // As soon as the vector is empty, we remove the entry. Therefore it
-            // shouldn't be possible to fail this assertion.
-            assert!(popped.is_some());
-
-            if entry.len() == 0 {
-                self.variables.remove(name);
-            }
-
+    pub fn unbind_var(&mut self, name: impl AsRef<str>) -> Result<(), String> {
+        if self.scope_mut().remove(name.as_ref()).is_some() {
             Ok(())
         } else {
-            Err("variable not bound".to_string())
+            Err(format!("variable {} not bound", name.as_ref()))
         }
     }
 
-    pub fn lookup_var(&self, name: &str) -> Option<&RefVal> {
-        self.variables.get(name).and_then(|vars| vars.iter().last())
+    pub fn lookup_var(&self, name: impl AsRef<str>) -> Option<Atom> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(val) = scope.get(name.as_ref()) {
+                return Some(val.clone());
+            }
+        }
+        None
     }
 }
 
-pub fn evaluate(expr: &SExpr, env: &mut Environment) -> Result<RefVal, String> {
+pub fn evaluate(expr: &SExpr, env: &mut Environment) -> Result<Atom, String> {
     match expr {
         SExpr::Atom(atom) => match atom {
             Atom::Ident(ident) => env
-                .lookup_var(ident)
+                .lookup_var(ident.as_ref())
                 .ok_or(format!("name '{ident}' was not defined"))
-                .cloned(),
+                .clone(),
 
-            Atom::String(s) => Ok(RefVal::owned(Value::String(s.clone()))),
-            Atom::Number(n) => Ok(RefVal::owned(Value::Number(*n))),
-            Atom::Quote(box q) => Ok(RefVal::owned(Value::Quote(q.clone()))),
+            atom => Ok(atom.clone()),
         },
 
-        SExpr::List(elements) => {
-            let values: Vec<_> = elements
-                .into_iter()
-                .map(|expr| evaluate(expr, env))
-                .collect::<Result<_, _>>()?;
-
-            let fun = values
-                .get(0)
-                .ok_or("expected list to have at least one element".to_string())?
-                .clone();
-
-            if let Value::Function(fun) = fun.borrow() {
-                if fun.arity() != values[1..].len() {
-                    return Err(format!(
-                        "expected {} arguments, but got {} in {:?}",
-                        fun.arity(),
-                        values[1..].len(),
-                        fun
-                    ));
-                }
-                env.stack.extend(values[1..].iter().cloned());
-                call(fun, env)
-            } else {
-                Err(format!("expected a function got `{}`", fun))
+        SExpr::Cons(fun, tail) => {
+            let mut argc = 0;
+            let mut quote = tail.as_quote();
+            while let Some(SExpr::Cons(head, next)) = quote {
+                let head = head.as_quote().unwrap();
+                let res = evaluate(&head.clone().into(), env)?;
+                env.push_stack(res);
+                quote = next.as_quote();
+                argc += 1;
             }
+
+            let fun = fun.as_quote().unwrap();
+            let fun = evaluate(fun, env)?;
+            let fun = fun
+                .as_function()
+                .ok_or(format!("expected a function, got `{}`", fun))?;
+
+            if fun.arity() != argc {
+                return Err(format!(
+                    "expected {} arguments, but got {} in {}",
+                    fun.arity(),
+                    argc,
+                    fun
+                ));
+            }
+            call(fun, env)
         }
     }
 }
 
-pub fn call(func: &Function, env: &mut Environment) -> Result<RefVal, String> {
+pub fn call(func: &Function, env: &mut Environment) -> Result<Atom, String> {
     match func {
         Function::UserDefined { arg_names, body } => {
             let args = env.stack.split_off(env.stack.len() - func.arity());
@@ -123,11 +132,9 @@ pub fn call(func: &Function, env: &mut Environment) -> Result<RefVal, String> {
                 env.bind_var(name, val);
             }
 
+            env.push_frame();
             let retr = evaluate(body, env)?;
-
-            for name in arg_names.iter() {
-                env.unbind_var(name.as_ref())?;
-            }
+            env.pop_frame();
 
             Ok(retr)
         }

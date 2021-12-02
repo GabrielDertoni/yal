@@ -1,9 +1,14 @@
-(let 'letfn (fn '(name args body)
-                '(let name (fn args body))))
+; (let 'letfn (fn '(name args body)
+;                 '(let name (fn args body))))
+; 
+; (letfn 'fac '(n)
+;        '(if (= n 0)
+;           '1
+;           '(* n (fac (- n 1)))))
 
-(letfn 'fac '(n)
-       '(if (= n 0)
-          '1
-          '(* n (fac (- n 1)))))
+(let 'fac (fn '(n)
+      '(if (= n 0)
+         1
+         (* n (fac (- n 1))))))
 
 (print (fac 10))
