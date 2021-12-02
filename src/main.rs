@@ -1,4 +1,3 @@
-#![feature(format_args_capture)]
 #![feature(pattern)]
 #![feature(box_patterns)]
 #![feature(result_cloned)]
@@ -51,25 +50,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
 
     env.register_external_fun("let", 2, std_lib::let_impl);
     env.register_external_fun("fn", 2, std_lib::fn_impl);
-    env.register_external_fun("letfn", 3, std_lib::letfn_impl);
     env.register_external_fun("if", 3, std_lib::if_impl);
+    env.register_external_fun("eval", 1, std_lib::eval_impl);
+    env.register_external_fun("cons", 2, std_lib::cons_impl);
+    env.register_external_fun("car", 1, std_lib::car_impl);
+    env.register_external_fun("cdr", 1, std_lib::cdr_impl);
     env.register_external_fun("=", 2, std_lib::eq);
+    env.register_external_fun("eq", 2, std_lib::eq);
     env.register_external_fun("+", 2, std_lib::add);
     env.register_external_fun("-", 2, std_lib::sub);
     env.register_external_fun("*", 2, std_lib::mul);
     env.register_external_fun("/", 2, std_lib::div);
+    env.register_external_fun("print", 1, std_lib::print_impl);
 
     for expr in s_exprs {
-        match evaluate(&expr, &mut env) {
-            Ok(v) => {
-                dbg!(v);
-                // dbg!(&env);
-            },
-            Err(e) => {
-                eprintln!("{}", e);
-                return Ok(());
-            }
-        }
+        evaluate(&expr, &mut env)?;
     }
 
     Ok(())

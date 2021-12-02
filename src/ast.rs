@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::borrow::{ ToOwned, Borrow };
 use std::ops::Deref;
+use std::collections::VecDeque;
 
 use crate::evaluator::Environment;
 
@@ -14,8 +15,14 @@ pub enum Atom {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SExpr {
-    List(Vec<SExpr>),
+    List(VecDeque<SExpr>),
     Atom(Atom),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum List {
+    Cons(Box<SExpr>, Box<SExpr>),
+    Nil,
 }
 
 #[derive(Debug)]
@@ -75,7 +82,7 @@ impl Atom {
 }
 
 impl SExpr {
-    pub fn as_list(&self) -> Option<&Vec<SExpr>> {
+    pub fn as_list(&self) -> Option<&VecDeque<SExpr>> {
         if let Self::List(v) = self {
             Some(v)
         } else {
@@ -95,6 +102,25 @@ impl SExpr {
 impl Value {
     pub fn as_quote(&self) -> Option<&SExpr> {
         if let Self::Quote(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_type(&self) -> &'static str {
+        use Value::*;
+
+        match self {
+            String(_)   => "string",
+            Number(_)   => "number",
+            Quote(_)    => "quote",
+            Function(_) => "function",
+        }
+    }
+
+    pub fn as_string(&self) -> Option<&String> {
+        if let Self::String(v) = self {
             Some(v)
         } else {
             None
@@ -153,6 +179,10 @@ impl RefVal {
             RefVal::Owned(o) => Rc::as_ptr(&o.0),
         }
     }
+
+    pub fn get_type(&self) -> &'static str {
+        self.deref().get_type()
+    }
 }
 
 impl Deref for RefVal {
@@ -177,8 +207,54 @@ impl Function {
     }
 }
 
-impl std::fmt::Debug for Function {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+use std::fmt::{ self, Debug, Display, Formatter };
+
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        use Value::*;
+        match self {
+            String(s)     => Display::fmt(s, f),
+            Number(n)     => Display::fmt(n, f),
+            Quote(q)      => Display::fmt(q, f),
+            Function(fun) => Display::fmt(fun, f),
+        }
+    }
+}
+
+impl Display for SExpr {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            SExpr::Atom(atom) => Display::fmt(atom, f),
+            SExpr::List(list) => {
+                if list.len() == 0 {
+                    write!(f, "()")
+                } else {
+                    write!(f, "({}", list[0])?;
+                    for el in list.iter().skip(1) {
+                        write!(f, ", {}", el)?;
+                    }
+                    Ok(())
+                }
+            }
+        }
+    }
+}
+
+impl Display for Atom {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        use Atom::*;
+
+        match self {
+            String(s) => Display::fmt(s, f),
+            Number(n) => Display::fmt(n, f),
+            Quote(q)  => Display::fmt(q, f),
+            Ident(i)  => Display::fmt(i, f),
+        }
+    }
+}
+
+impl Debug for Function {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         use Function::*;
 
         match self {
@@ -190,5 +266,17 @@ impl std::fmt::Debug for Function {
                 write!(f, "lib function '{}' with {} arguments", name, arity)
             }
         }
+    }
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+impl Display for RefVal {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(self.deref(), f)
     }
 }

@@ -111,26 +111,20 @@ pub fn fn_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
     })))
 }
 
-pub fn letfn_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
-    let fun = fn_impl(env)?;
-    env.push_stack(fun);
-    let_impl(env)
-}
-
 pub fn if_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
     let else_branch = env.pop_stack();
     let then_branch = env.pop_stack();
     let cond = env.pop_stack();
 
-    let then_branch = then_branch
-        .deref()
-        .as_quote()
-        .ok_or(format!("expected then branch to be quoted, got {:?}", then_branch))?;
+    let then_branch = then_branch.deref().as_quote().ok_or(format!(
+        "expected then branch to be quoted, got {:?}",
+        then_branch
+    ))?;
 
-    let else_branch = else_branch
-        .deref()
-        .as_quote()
-        .ok_or(format!("expected else branch to be quoted, got {:?}", else_branch))?;
+    let else_branch = else_branch.deref().as_quote().ok_or(format!(
+        "expected else branch to be quoted, got {:?}",
+        else_branch
+    ))?;
 
     if let RefVal::Borrowed(b) = cond {
         let ptr = b as *const Value;
@@ -139,6 +133,74 @@ pub fn if_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
         }
     }
     evaluate(then_branch, env)
+}
+
+pub fn eval_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
+    let expr = env.pop_stack();
+
+    let expr = expr
+        .deref()
+        .as_quote()
+        .ok_or(format!("expected an expression, got {:?}", expr))?;
+
+    evaluate(expr, env)
+}
+
+pub fn cons_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
+    let tail = env.pop_stack();
+    let head = env.pop_stack();
+
+    let head = head
+        .deref()
+        .as_quote()
+        .ok_or(format!("expected a quoted expression, got {:?}", head))?;
+
+    let mut tail = tail
+        .deref()
+        .as_quote()
+        .and_then(SExpr::as_list)
+        .ok_or(format!("expected a quoted expression, got {:?}", tail))?
+        .clone();
+
+    tail.push_front(head.clone());
+    Ok(RefVal::owned(Value::Quote(SExpr::List(tail))))
+}
+
+pub fn car_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
+    let list = env.pop_stack();
+
+    let list = list
+        .deref()
+        .as_quote()
+        .and_then(SExpr::as_list)
+        .ok_or(format!("expected a list, got {:?}", list))?;
+
+    Ok(RefVal::owned(Value::Quote(
+        list.get(0)
+            .ok_or(format!("expected non empty list"))?
+            .clone(),
+    )))
+}
+
+pub fn cdr_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
+    let list = env.pop_stack();
+
+    let list = list
+        .deref()
+        .as_quote()
+        .and_then(SExpr::as_list)
+        .ok_or(format!("expected a list, got {:?}", list))?;
+
+    if list.len() == 0 {
+        return Err(format!("expected non empty list"));
+    }
+
+    Ok(RefVal::owned(Value::Quote(SExpr::List(
+        list.iter()
+            .skip(1)
+            .cloned()
+            .collect(),
+    ))))
 }
 
 pub fn eq(env: &mut Environment) -> Result<RefVal, RuntimeError> {
@@ -170,7 +232,14 @@ macro_rules! impl_bin_op {
 
             match (lhs.deref(), rhs.deref()) {
                 (Number(lhs), Number(rhs)) => Ok((lhs $op rhs).into()),
-                _ => Err(RuntimeError::from("expected two numbers"))
+                _ => {
+                    Err(format!(
+                        "expected two numbers in operation '{}', got {} and {}",
+                        stringify!($op),
+                        lhs.get_type(),
+                        rhs.get_type()
+                    ))
+                }
             }
         }
     };
@@ -186,4 +255,9 @@ impl_bin_op! {
     pub fn add => +;
     pub fn mul => *;
     pub fn div => /;
+}
+
+pub fn print_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
+    println!("{}", env.pop_stack());
+    Ok(RefVal::reference(nil_ref()))
 }

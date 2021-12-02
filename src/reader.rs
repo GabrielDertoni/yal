@@ -1,4 +1,5 @@
 use std::str::pattern::Pattern;
+use std::collections::VecDeque;
 
 use crate::ast::*;
 use crate::error::*;
@@ -141,15 +142,15 @@ impl<'a> Reader<'a> {
         }
     }
 
-    pub fn parse_sexprs(&mut self) -> Result<Vec<SExpr>, Error<'a>> {
-        let mut s_exprs = Vec::new();
+    pub fn parse_sexprs(&mut self) -> Result<VecDeque<SExpr>, Error<'a>> {
+        let mut s_exprs = VecDeque::new();
 
         loop {
             self.skip_whitespace();
             if self.peek().is_none() {
                 return Ok(s_exprs)
             }
-            s_exprs.push(self.parse_sexpr()?);
+            s_exprs.push_back(self.parse_sexpr()?);
         }
     }
 }
