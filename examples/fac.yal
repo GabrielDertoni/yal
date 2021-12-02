@@ -1,9 +1,6 @@
 (let 'letfn (fn '(name args body)
                 '(let name (fn args body))))
 
-(letfn 'apply '(func args)
-       '(eval (cons func args)))
-
 (letfn 'fac '(n)
        '(if (= n 0)
           '1

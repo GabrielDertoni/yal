@@ -215,7 +215,7 @@ impl Display for Value {
         match self {
             String(s)     => Display::fmt(s, f),
             Number(n)     => Display::fmt(n, f),
-            Quote(q)      => Display::fmt(q, f),
+            Quote(q)      => write!(f, "'{}", q),
             Function(fun) => Display::fmt(fun, f),
         }
     }
@@ -231,9 +231,9 @@ impl Display for SExpr {
                 } else {
                     write!(f, "({}", list[0])?;
                     for el in list.iter().skip(1) {
-                        write!(f, ", {}", el)?;
+                        write!(f, " {}", el)?;
                     }
-                    Ok(())
+                    write!(f, ")")
                 }
             }
         }
@@ -247,7 +247,7 @@ impl Display for Atom {
         match self {
             String(s) => Display::fmt(s, f),
             Number(n) => Display::fmt(n, f),
-            Quote(q)  => Display::fmt(q, f),
+            Quote(q)  => write!(f, "'{}", q),
             Ident(i)  => Display::fmt(i, f),
         }
     }

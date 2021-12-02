@@ -63,6 +63,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     env.register_external_fun("/", 2, std_lib::div);
     env.register_external_fun("print", 1, std_lib::print_impl);
 
+    env.bind_var("nil", ast::RefVal::reference(std_lib::nil_ref()));
+    env.bind_var("t", ast::RefVal::reference(std_lib::true_ref()));
+    env.bind_var("f", ast::RefVal::reference(std_lib::false_ref()));
+
     for expr in s_exprs {
         evaluate(&expr, &mut env)?;
     }

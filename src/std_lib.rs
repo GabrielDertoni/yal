@@ -7,20 +7,20 @@ use crate::error::RuntimeError;
 use crate::evaluator::*;
 
 lazy_static! {
-    static ref TRUE: Value = Value::Quote(SExpr::Atom(Atom::Ident("true".to_string())));
-    static ref FALSE: Value = Value::Quote(SExpr::Atom(Atom::Ident("false".to_string())));
+    static ref TRUE: Value = Value::Quote(SExpr::Atom(Atom::Ident("t".to_string())));
+    static ref FALSE: Value = Value::Quote(SExpr::Atom(Atom::Ident("f".to_string())));
     static ref NIL: Value = Value::Quote(SExpr::Atom(Atom::Ident("nil".to_string())));
 }
 
-fn true_ref() -> &'static Value {
+pub fn true_ref() -> &'static Value {
     TRUE.deref()
 }
 
-fn false_ref() -> &'static Value {
+pub fn false_ref() -> &'static Value {
     FALSE.deref()
 }
 
-fn nil_ref() -> &'static Value {
+pub fn nil_ref() -> &'static Value {
     NIL.deref()
 }
 
@@ -61,6 +61,7 @@ impl From<Atom> for SExpr {
     }
 }
 
+// TODOOO: This should be scoped, somehow
 pub fn let_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
     let val = env.pop_stack();
     let name = env.pop_stack();
@@ -72,7 +73,7 @@ pub fn let_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
         .and_then(Atom::as_ident)
         .ok_or(format!("expected a symbol, got {:?}", name))?;
 
-    env.register_var(name, val.clone());
+    env.bind_var(name, val.clone());
     Ok(val)
 }
 
@@ -173,7 +174,7 @@ pub fn car_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
         .deref()
         .as_quote()
         .and_then(SExpr::as_list)
-        .ok_or(format!("expected a list, got {:?}", list))?;
+        .ok_or(format!("car expected a list, got {}", list))?;
 
     Ok(RefVal::owned(Value::Quote(
         list.get(0)
@@ -189,7 +190,7 @@ pub fn cdr_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
         .deref()
         .as_quote()
         .and_then(SExpr::as_list)
-        .ok_or(format!("expected a list, got {:?}", list))?;
+        .ok_or(format!("cdr expected a list, got {}", list))?;
 
     if list.len() == 0 {
         return Err(format!("expected non empty list"));
@@ -209,14 +210,15 @@ pub fn eq(env: &mut Environment) -> Result<RefVal, RuntimeError> {
     let rhs = env.pop_stack();
     let lhs = env.pop_stack();
 
-    Ok(match (lhs.deref(), rhs.deref()) {
+    let res = match (lhs.deref(), rhs.deref()) {
         (String(lhs), String(rhs)) if lhs == rhs => true,
         (Number(lhs), Number(rhs)) if lhs == rhs => true,
         (Quote(lhs), Quote(rhs)) if lhs == rhs => true,
         (Function(_), Function(_)) if &lhs.as_ptr() == &rhs.as_ptr() => true,
         _ => false,
-    }
-    .into())
+    };
+
+    Ok(res.into())
 }
 
 macro_rules! impl_bin_op {
@@ -258,6 +260,6 @@ impl_bin_op! {
 }
 
 pub fn print_impl(env: &mut Environment) -> Result<RefVal, RuntimeError> {
-    println!("{}", env.pop_stack());
+    print!("{}", env.pop_stack());
     Ok(RefVal::reference(nil_ref()))
 }

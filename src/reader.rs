@@ -59,11 +59,18 @@ impl<'a> Reader<'a> {
                 self.advance();
                 let start = self.pos();
                 while let Some(chr) = self.peek() {
-                    if chr == '\\' { self.advance(); }
+                    if chr == '\\' {
+                        self.advance();
+                    }
                     else if chr == '"' { break }
                     self.advance();
                 }
                 let s = start.span_to(self.pos()).as_str().to_string();
+
+                // TODOO: Make this more efficient!
+                let s = s.replace("\\n", "\n");
+                let s = s.replace("\\r", "\0");
+                let s = s.replace("\\0", "\0");
                 self.advance();
                 Ok(Atom::String(s))
             }
@@ -159,6 +166,9 @@ pub struct ParenChars<'a> {
     slice: &'a str,
     next: Option<char>,
     level: i32,
+    // TODO: Make this go away!
+    in_str: bool,
+    in_escape: bool,
 }
 
 impl<'a> ParenChars<'a> {
@@ -172,6 +182,8 @@ impl<'a> ParenChars<'a> {
             slice: s,
             next,
             level,
+            in_str: false,
+            in_escape: false,
         }
     }
 
@@ -180,7 +192,7 @@ impl<'a> ParenChars<'a> {
     }
 
     pub fn peek(&self) -> Option<char> {
-        if self.next == Some(')') && self.level == 0 {
+        if self.next == Some(')') && self.level == 0 && !self.in_str {
             None
         } else {
             self.next
@@ -217,6 +229,23 @@ impl<'a> Iterator for ParenChars<'a> {
 
         // Let's hope that this `.nth(0)` is not terribly inefficient.
         self.next = self.slice.chars().nth(0);
+
+        let was_escape = self.in_escape;
+
+        if prev == '"' && !self.in_escape {
+            self.in_str = !self.in_str;
+        } else if prev == '\\' {
+            self.in_escape = true;
+        }
+
+        if was_escape {
+            self.in_escape = false;
+        }
+
+        if self.in_str {
+            return Some(prev);
+        }
+
         if prev == ')' {
             self.level -= 1;
             if self.level < 0 {

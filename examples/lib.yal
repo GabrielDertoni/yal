@@ -1,0 +1,21 @@
+(let 'letfn (fn '(name args body)
+                '(let name (fn args body))))
+
+(letfn 'apply '(func args)
+       '(eval (cons func args)))
+
+(letfn 'empty '(lst)
+       '(if (= lst '()) 't 'f))
+
+(letfn 'fst '(a b) 'a)
+(letfn 'snd '(a b) 'b)
+
+(letfn 'do '(lst)
+       '(if (empty (cdr lst))
+          '(eval (car lst))
+          '(snd (eval (car lst)) (do (cdr lst)))))
+
+(letfn 'println '(thing)
+       '(do '((print thing)
+              (print "\n")
+              )))

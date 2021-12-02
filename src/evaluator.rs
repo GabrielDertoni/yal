@@ -5,7 +5,7 @@ use crate::ast::*;
 
 #[derive(Debug)]
 pub struct Environment {
-    variables: HashMap<String, RefVal>,
+    variables: HashMap<String, Vec<RefVal>>,
     stack: Vec<RefVal>,
 }
 
@@ -33,12 +33,43 @@ impl Environment {
     ) {
         self.variables.insert(
             name.to_string(),
-            RefVal::owned(Value::Function(Function::Lib { name, arity, ptr })),
+            vec![RefVal::owned(Value::Function(Function::Lib {
+                name,
+                arity,
+                ptr,
+            }))],
         );
     }
 
-    pub fn register_var(&mut self, name: impl ToString, val: RefVal) {
-        self.variables.insert(name.to_string(), val);
+    pub fn bind_var(&mut self, name: impl ToString, val: RefVal) {
+        let name = name.to_string();
+        if let Some(entry) = self.variables.get_mut(&name) {
+            entry.push(val);
+        } else {
+            self.variables.insert(name, vec![val]);
+        }
+    }
+
+    pub fn unbind_var(&mut self, name: &str) -> Result<(), String> {
+        if let Some(entry) = self.variables.get_mut(name) {
+            let popped = entry.pop();
+
+            // As soon as the vector is empty, we remove the entry. Therefore it
+            // shouldn't be possible to fail this assertion.
+            assert!(popped.is_some());
+
+            if entry.len() == 0 {
+                self.variables.remove(name);
+            }
+
+            Ok(())
+        } else {
+            Err("variable not bound".to_string())
+        }
+    }
+
+    pub fn lookup_var(&self, name: &str) -> Option<&RefVal> {
+        self.variables.get(name).and_then(|vars| vars.iter().last())
     }
 }
 
@@ -46,8 +77,7 @@ pub fn evaluate(expr: &SExpr, env: &mut Environment) -> Result<RefVal, String> {
     match expr {
         SExpr::Atom(atom) => match atom {
             Atom::Ident(ident) => env
-                .variables
-                .get(ident)
+                .lookup_var(ident)
                 .ok_or(format!("name '{ident}' was not defined"))
                 .cloned(),
 
@@ -79,7 +109,7 @@ pub fn evaluate(expr: &SExpr, env: &mut Environment) -> Result<RefVal, String> {
                 env.stack.extend(values[1..].iter().cloned());
                 call(fun, env)
             } else {
-                Err(format!("expected a function got {:#?}", fun))
+                Err(format!("expected a function got `{}`", fun))
             }
         }
     }
@@ -90,13 +120,13 @@ pub fn call(func: &Function, env: &mut Environment) -> Result<RefVal, String> {
         Function::UserDefined { arg_names, body } => {
             let args = env.stack.split_off(env.stack.len() - func.arity());
             for (name, val) in arg_names.iter().zip(args.into_iter()) {
-                env.variables.insert(name.clone(), val);
+                env.bind_var(name, val);
             }
 
             let retr = evaluate(body, env)?;
 
             for name in arg_names.iter() {
-                env.variables.remove(name);
+                env.unbind_var(name.as_ref())?;
             }
 
             Ok(retr)
